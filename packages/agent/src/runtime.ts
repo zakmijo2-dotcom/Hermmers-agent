@@ -7,6 +7,7 @@ import { MemoryStore } from './memory-store';
 import { MemoryInterface } from './memory-interface';
 import { LearningEngine } from './learning-engine';
 import { SkillManager } from './skill-manager';
+import { StableContextManager } from './context-stable';
 
 export interface AgentConfig {
   memoryPath?: string;
@@ -14,6 +15,7 @@ export interface AgentConfig {
   parentSessionId?: string;
   skillsDir?: string;
   enableLearning?: boolean;
+  systemInstructions?: string;
 }
 
 export interface AgentTurn {
@@ -27,16 +29,22 @@ export class AgentRuntime {
   private memoryInterface: MemoryInterface;
   private learningEngine: LearningEngine;
   private skillManager: SkillManager;
+  private contextManager: StableContextManager;
   private sessionId: string;
   private enableLearning: boolean;
   private turnCount: number = 0;
+  private lastSkillCount: number = 0;
+  private systemInstructions: string;
+  private cacheBreakCount: number = 0;
 
   constructor(config: AgentConfig = {}) {
     this.memoryStore = new MemoryStore(config.memoryPath || ':memory:');
     this.memoryInterface = new MemoryInterface(this.memoryStore);
     this.learningEngine = new LearningEngine(this.memoryInterface);
     this.skillManager = new SkillManager(config.skillsDir);
+    this.contextManager = new StableContextManager();
     this.enableLearning = config.enableLearning ?? true;
+    this.systemInstructions = config.systemInstructions || 'You are a helpful AI assistant.';
 
     if (config.sessionId) {
       // Resume existing session
@@ -58,8 +66,39 @@ export class AgentRuntime {
     // Load relevant context from memory
     const context = await this.memoryInterface.loadContext(this.sessionId, input);
 
-    // Check for applicable learned skills
+    // Get current skills
     const skills = this.skillManager.getAllSkills();
+
+    // Build stable baseline (only rebuilds if skills changed)
+    let baselineChanged = false;
+    if (this.contextManager.shouldRebuildBaseline(skills.length, this.lastSkillCount)) {
+      const baseline = this.contextManager.buildBaseline({
+        systemInstructions: this.systemInstructions,
+        skills,
+        sessionMetadata: { sessionId: this.sessionId }
+      });
+
+      const updates = this.contextManager.buildUpdates(context);
+      const result = this.contextManager.assemblePrompt(baseline, updates);
+      baselineChanged = result.baselineChanged;
+
+      if (baselineChanged) {
+        this.cacheBreakCount++;
+      }
+
+      this.lastSkillCount = skills.length;
+    } else {
+      // Baseline stable, only build updates
+      const baseline = this.contextManager.buildBaseline({
+        systemInstructions: this.systemInstructions,
+        skills,
+        sessionMetadata: { sessionId: this.sessionId }
+      });
+      const updates = this.contextManager.buildUpdates(context);
+      this.contextManager.assemblePrompt(baseline, updates);
+    }
+
+    // Check for applicable learned skills
     const applicableSkill = skills.find(s => input.toLowerCase().includes(s.trigger.split(':')[1]?.trim() || ''));
 
     // Placeholder agent logic - real implementation would call LLM here
@@ -109,6 +148,14 @@ export class AgentRuntime {
 
   getMemoryInterface(): MemoryInterface {
     return this.memoryInterface;
+  }
+
+  getCacheMetrics(): { breaks: number; stable: boolean } {
+    const metrics = this.contextManager.getCacheMetrics();
+    return {
+      breaks: this.cacheBreakCount,
+      stable: metrics.baselineStable
+    };
   }
 
   close(): void {
