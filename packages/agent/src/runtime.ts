@@ -9,6 +9,7 @@ import { LearningEngine } from './learning-engine';
 import { SkillManager } from './skill-manager';
 import { StableContextManager } from './context-stable';
 import { LineageTracker } from './lineage';
+import { ExecutionObserver } from './execution-observer';
 import { randomUUID } from 'crypto';
 
 export interface AgentConfig {
@@ -18,6 +19,7 @@ export interface AgentConfig {
   skillsDir?: string;
   enableLearning?: boolean;
   systemInstructions?: string;
+  observer?: ExecutionObserver;
 }
 
 export interface AgentTurn {
@@ -33,6 +35,7 @@ export class AgentRuntime {
   private skillManager: SkillManager;
   private contextManager: StableContextManager;
   private lineageTracker: LineageTracker;
+  private observer: ExecutionObserver;
   private sessionId: string;
   private enableLearning: boolean;
   private turnCount: number = 0;
@@ -48,6 +51,7 @@ export class AgentRuntime {
     this.skillManager = new SkillManager(config.skillsDir);
     this.contextManager = new StableContextManager();
     this.lineageTracker = new LineageTracker();
+    this.observer = config.observer || new ExecutionObserver();
     this.enableLearning = config.enableLearning ?? true;
     this.systemInstructions = config.systemInstructions || 'You are a helpful AI assistant.';
 
@@ -82,11 +86,23 @@ export class AgentRuntime {
     this.turnCount++;
     this.currentTurnId = randomUUID();
 
+    // Emit turn start event
+    await this.observer.emit('turn_start', {
+      turnId: this.currentTurnId,
+      input,
+      sessionId: this.sessionId
+    });
+
     // Track turn in lineage
     this.lineageTracker.trackTurn(this.currentTurnId, this.sessionId, input);
 
     // Load relevant context from memory
     const context = await this.memoryInterface.loadContext(this.sessionId, input);
+
+    await this.observer.emit('context_update', {
+      type: 'memory_loaded',
+      memoryCount: context.relevantMemories.length
+    });
 
     // Get current skills
     const skills = this.skillManager.getAllSkills();
@@ -131,6 +147,11 @@ export class AgentRuntime {
       this.skillManager.updateSkill(applicableSkill.name, {
         usageCount: applicableSkill.usageCount + 1
       });
+
+      await this.observer.emit('skill_applied', {
+        skillName: applicableSkill.name,
+        confidence: applicableSkill.confidence
+      });
     }
 
     // Record turn in memory
@@ -140,6 +161,13 @@ export class AgentRuntime {
     if (this.enableLearning && this.turnCount % 5 === 0) {
       await this.runLearningCycle();
     }
+
+    // Emit turn end event
+    await this.observer.emit('turn_end', {
+      turnId: this.currentTurnId,
+      response,
+      sessionId: this.sessionId
+    });
 
     return {
       input,
@@ -152,12 +180,19 @@ export class AgentRuntime {
    * Execute learning cycle: detect patterns and create skills
    */
   private async runLearningCycle(): Promise<void> {
+    await this.observer.emit('learning_start', {});
+
     const newSkills = await this.learningEngine.runLearningCycle(this.sessionId);
 
     for (const skill of newSkills) {
       // Save new skill to disk
       this.skillManager.saveSkill(skill);
     }
+
+    await this.observer.emit('learning_end', {
+      skillCount: newSkills.length,
+      skills: newSkills.map(s => s.name)
+    });
 
     if (newSkills.length > 0) {
       console.log(`[Learning] Generated ${newSkills.length} new skills`);
@@ -182,6 +217,10 @@ export class AgentRuntime {
 
   getLineageTracker(): LineageTracker {
     return this.lineageTracker;
+  }
+
+  getObserver(): ExecutionObserver {
+    return this.observer;
   }
 
   close(): void {
