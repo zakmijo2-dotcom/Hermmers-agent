@@ -8,6 +8,8 @@ import { MemoryInterface } from './memory-interface';
 import { LearningEngine } from './learning-engine';
 import { SkillManager } from './skill-manager';
 import { StableContextManager } from './context-stable';
+import { LineageTracker } from './lineage';
+import { randomUUID } from 'crypto';
 
 export interface AgentConfig {
   memoryPath?: string;
@@ -30,12 +32,14 @@ export class AgentRuntime {
   private learningEngine: LearningEngine;
   private skillManager: SkillManager;
   private contextManager: StableContextManager;
+  private lineageTracker: LineageTracker;
   private sessionId: string;
   private enableLearning: boolean;
   private turnCount: number = 0;
   private lastSkillCount: number = 0;
   private systemInstructions: string;
   private cacheBreakCount: number = 0;
+  private currentTurnId: string | null = null;
 
   constructor(config: AgentConfig = {}) {
     this.memoryStore = new MemoryStore(config.memoryPath || ':memory:');
@@ -43,6 +47,7 @@ export class AgentRuntime {
     this.learningEngine = new LearningEngine(this.memoryInterface);
     this.skillManager = new SkillManager(config.skillsDir);
     this.contextManager = new StableContextManager();
+    this.lineageTracker = new LineageTracker();
     this.enableLearning = config.enableLearning ?? true;
     this.systemInstructions = config.systemInstructions || 'You are a helpful AI assistant.';
 
@@ -53,15 +58,32 @@ export class AgentRuntime {
       if (!session) {
         throw new Error(`Session ${config.sessionId} not found`);
       }
+      // Track existing session lineage with memory store for reconstruction
+      this.lineageTracker.trackSessionCreation(
+        this.sessionId,
+        session.parentSessionId || undefined,
+        this.memoryStore
+      );
     } else {
       // Create new session
       const session = this.memoryStore.createSession(config.parentSessionId);
       this.sessionId = session.id;
+
+      // Track session lineage with memory store for reconstruction
+      this.lineageTracker.trackSessionCreation(
+        this.sessionId,
+        config.parentSessionId,
+        this.memoryStore
+      );
     }
   }
 
   async executeTurn(input: string): Promise<AgentTurn> {
     this.turnCount++;
+    this.currentTurnId = randomUUID();
+
+    // Track turn in lineage
+    this.lineageTracker.trackTurn(this.currentTurnId, this.sessionId, input);
 
     // Load relevant context from memory
     const context = await this.memoryInterface.loadContext(this.sessionId, input);
@@ -156,6 +178,10 @@ export class AgentRuntime {
       breaks: this.cacheBreakCount,
       stable: metrics.baselineStable
     };
+  }
+
+  getLineageTracker(): LineageTracker {
+    return this.lineageTracker;
   }
 
   close(): void {

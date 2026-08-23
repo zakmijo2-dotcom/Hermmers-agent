@@ -75,13 +75,15 @@ export class MemoryInterface {
     toolName: string,
     args: any,
     result: any,
-    parentId?: string
+    parentId?: string,
+    success: boolean = true,
+    duration: number = 0
   ): string {
     const callEntry = this.store.addMemory({
       sessionId,
       type: 'tool_call',
       content: `${toolName}(${JSON.stringify(args)})`,
-      metadata: { toolName, args },
+      metadata: { toolName, args, success, duration },
       parentId
     });
 
@@ -89,7 +91,7 @@ export class MemoryInterface {
       sessionId,
       type: 'tool_result',
       content: JSON.stringify(result),
-      metadata: { toolName, result },
+      metadata: { toolName, result, success, duration },
       parentId: callEntry.id
     });
 
