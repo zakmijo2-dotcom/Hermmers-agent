@@ -6,6 +6,9 @@
 import { Command } from 'commander';
 import { initCommand } from './commands/init';
 import { agentsCommand } from './commands/agents';
+import { searchCommand } from './commands/search';
+import { listCommand } from './commands/list';
+import { addCommand } from './commands/add';
 
 const program = new Command();
 
@@ -35,9 +38,7 @@ program
 program
   .command('add <package>')
   .description('Install a skill, tool, or profile')
-  .action((pkg) => {
-    console.log(`⚠️  hemmers add ${pkg} - Not yet implemented`);
-  });
+  .action(addCommand);
 
 program
   .command('remove <package>')
@@ -49,16 +50,12 @@ program
 program
   .command('list')
   .description('List installed skills, tools, and profiles')
-  .action(() => {
-    console.log('⚠️  hemmers list - Not yet implemented');
-  });
+  .action(listCommand);
 
 program
   .command('search <query>')
   .description('Search for skills, tools, and profiles')
-  .action((query) => {
-    console.log(`⚠️  hemmers search ${query} - Not yet implemented`);
-  });
+  .action(searchCommand);
 
 program
   .command('profile <name>')
