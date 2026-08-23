@@ -1,6 +1,21 @@
 {
+  "name": "mij",
+  "version": "0.1.0",
+  "description": "Custom agent harness built from OpenCode targeting Hermès-level architecture",
+  "type": "module",
+  "scripts": {
+    "test": "tsx tests/run-all.ts",
+    "test:memory": "tsx tests/phase2-validate.ts",
+    "test:learning": "tsx tests/phase3-validate.ts",
+    "test:context": "tsx tests/phase4-validate.ts",
+    "test:lineage": "tsx tests/phase5-validate.ts",
+    "test:routing": "tsx tests/phase6-validate.ts",
+    "test:observable": "tsx tests/phase7-validate.ts",
+    "test:integration": "tsx tests/phase8-validate.ts",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
-    "tsx": "^4.23.12",
-    "typescript": "^7.0.2"
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
   }
 }
