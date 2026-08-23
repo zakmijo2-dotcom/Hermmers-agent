@@ -100,6 +100,14 @@ export async function initCommand() {
   const configPath = join(hemmersHome, 'config.json');
   writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
 
+  // Initialize skills registry with official skills
+  try {
+    const { initializeRegistry } = await import('../../core/skills/init-registry');
+    initializeRegistry();
+  } catch (error) {
+    console.warn('⚠️  Could not initialize skills registry:', (error as Error).message);
+  }
+
   console.log(`\n✅ Hemmers initialized!`);
   console.log(`\n📁 Home: ${hemmersHome}`);
   console.log(`📄 Config: ${configPath}`);
