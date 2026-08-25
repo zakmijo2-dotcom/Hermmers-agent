@@ -38,7 +38,8 @@
     "test:security": "node --import tsx --test 'tests/security/**/*.test.ts'",
     "lint": "tsc --noEmit",
     "cli": "tsx hemmers/cli/index.ts",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepare": "npm run build"
   },
   "keywords": [
     "ai",

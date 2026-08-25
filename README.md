@@ -27,22 +27,42 @@ Hemmers is an **enhancement layer and secure execution runtime** that integrates
 
 ## 🚀 Quick Start
 
-### 1. Installation & Build
+### ⚡ One-Line Automatic Install (Linux, macOS, Termux)
 
 ```bash
-# Clone the repository
+curl -fsSL https://raw.githubusercontent.com/zakmijo2-dotcom/Hermmers-agent/main/install.sh | bash
+```
+
+### 🪟 One-Line Install for Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/zakmijo2-dotcom/Hermmers-agent/main/install.ps1 | iex
+```
+
+### 📦 Direct Install via npm
+
+```bash
+npm install -g git+https://github.com/zakmijo2-dotcom/Hermmers-agent.git
+```
+
+### 🛠️ Manual Installation
+
+```bash
+# 1. Clone the repository
 git clone https://github.com/zakmijo2-dotcom/Hermmers-agent.git
 cd Hermmers-agent
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-# Typecheck and build
-npm run typecheck
+# 3. Build TypeScript
 npm run build
 
-# Run automated test suite
+# 4. Run automated test suite
 npm test
+
+# 5. Link globally (optional)
+npm link
 ```
 
 ### 2. CLI Usage
