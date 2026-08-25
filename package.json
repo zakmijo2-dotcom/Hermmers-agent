@@ -1,24 +1,71 @@
 {
-  "name": "mij",
+  "name": "hemmers",
   "version": "0.1.0",
-  "description": "Custom agent harness built from OpenCode targeting Hermès-level architecture",
+  "description": "Universal AI Agent Enhancement Platform & Secure Runtime",
   "type": "module",
+  "main": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "bin": {
+    "hemmers": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/registry.d.ts",
+      "import": "./dist/adapters/registry.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "hemmers/skills/official",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "test": "tsx tests/run-all.ts",
-    "test:memory": "tsx tests/phase2-validate.ts",
-    "test:learning": "tsx tests/phase3-validate.ts",
-    "test:context": "tsx tests/phase4-validate.ts",
-    "test:lineage": "tsx tests/phase5-validate.ts",
-    "test:routing": "tsx tests/phase6-validate.ts",
-    "test:observable": "tsx tests/phase7-validate.ts",
-    "test:integration": "tsx tests/phase8-validate.ts",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test 'tests/**/*.test.ts'",
+    "test:unit": "node --import tsx --test 'tests/unit/**/*.test.ts'",
+    "test:integration": "node --import tsx --test 'tests/integration/**/*.test.ts'",
+    "test:security": "node --import tsx --test 'tests/security/**/*.test.ts'",
+    "lint": "tsc --noEmit",
+    "cli": "tsx hemmers/cli/index.ts",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "claude",
+    "opencode",
+    "pi",
+    "security",
+    "memory",
+    "skills",
+    "learning"
+  ],
+  "author": "Hemmers",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {
-    "tsx": "^4.0.0",
-    "typescript": "^5.4.0"
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
   },
-  "dependencies": {
-    "commander": "^15.0.0"
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

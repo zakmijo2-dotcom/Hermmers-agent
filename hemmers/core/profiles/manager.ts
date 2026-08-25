@@ -3,7 +3,7 @@
  * Pre-configured combinations of skills, tools, and settings
  */
 
-import { Skill } from '../types';
+import { Skill } from '../types/index.js';
 
 export interface Profile {
   id: string;

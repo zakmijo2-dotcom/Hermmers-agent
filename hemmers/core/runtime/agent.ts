@@ -1,33 +1,47 @@
 /**
- * Real Agent Runtime
- * Replaces echo placeholder with actual LLM execution
+ * Agent Runtime
+ * Production-grade autonomous LLM agent execution with memory, tools, security, and streaming
  */
 
-import { ModelProvider, GenerateRequest, Message, ToolCall } from '../providers/base';
-import { AnthropicProvider } from '../providers/anthropic';
-import { OpenAIProvider } from '../providers/openai';
-import { ToolEngine } from '../tools/engine';
-import { HookEngine } from '../hooks/engine';
-import { ContextEngine, ContextSegment } from '../context/engine';
-import { MemoryStore } from '../memory/store';
-import { PermissionManager } from '../permissions/manager';
-import { randomUUID } from 'crypto';
+import {
+  ModelProvider,
+  GenerateRequest,
+  Message,
+  ToolCall
+} from '../providers/base.js';
+import { ProviderFactory, ProviderType } from '../providers/factory.js';
+import { ToolEngine } from '../tools/engine.js';
+import { standardTools } from '../tools/standard.js';
+import { HookEngine } from '../hooks/engine.js';
+import { ContextEngine } from '../context/engine.js';
+import { MemoryStore } from '../memory/store.js';
+import { SecurityEngine } from '../security/engine.js';
+import { PermissionManager } from '../permissions/manager.js';
 
 export interface AgentConfig {
-  provider: 'anthropic' | 'openai';
+  provider: ProviderType;
   model: string;
+  apiKey?: string;
+  baseUrl?: string;
+  temperature?: number;
+  maxTokens?: number;
   systemPrompt?: string;
-  maxTurns?: number;
+  maxTurns?: number; // default 10
+  maxOutputSize?: number; // default 100,000 characters
   memoryPath?: string;
   enableTools?: boolean;
+  workspaceRoot?: string;
+  securityEngine?: SecurityEngine;
+  permissionManager?: PermissionManager;
 }
 
 export interface AgentTurn {
   userMessage: string;
   assistantMessage: string;
   toolCalls?: ToolCall[];
-  toolResults?: Record<string, any>;
+  toolResults?: Record<string, unknown>;
   tokensUsed: number;
+  sessionId: string;
 }
 
 export class AgentRuntime {
@@ -36,26 +50,45 @@ export class AgentRuntime {
   private hookEngine: HookEngine;
   private contextEngine: ContextEngine;
   private memoryStore: MemoryStore;
-  private permissionManager: PermissionManager;
+  private securityEngine: SecurityEngine;
+  private permissionManager?: PermissionManager;
   private conversationHistory: Message[] = [];
   private sessionId: string;
+  private workspaceRoot: string;
 
   constructor(private config: AgentConfig) {
-    // Initialize provider
-    this.provider = config.provider === 'anthropic'
-      ? new AnthropicProvider()
-      : new OpenAIProvider();
+    // 1. Initialize provider
+    this.provider = ProviderFactory.getProvider(config.provider, { baseUrl: config.baseUrl });
 
-    // Initialize subsystems
-    this.toolEngine = new ToolEngine();
+    // 2. Initialize security & permissions
+    this.securityEngine = config.securityEngine || new SecurityEngine();
+    this.permissionManager = config.permissionManager;
+
+    // 3. Initialize tool engine
+    this.toolEngine = new ToolEngine({
+      securityEngine: this.securityEngine,
+      permissionManager: this.permissionManager
+    });
+
+    // Register standard tools by default
+    for (const tool of standardTools) {
+      this.toolEngine.register(tool);
+    }
+
+    // 4. Initialize context & hooks
     this.hookEngine = new HookEngine();
     this.contextEngine = new ContextEngine();
+
+    // 5. Initialize memory & session
     this.memoryStore = new MemoryStore(config.memoryPath || ':memory:');
-    this.permissionManager = new PermissionManager();
+    const session = this.memoryStore.createSession(undefined, {
+      provider: config.provider,
+      model: config.model
+    });
+    this.sessionId = session.id;
+    this.workspaceRoot = config.workspaceRoot || process.cwd();
 
-    this.sessionId = randomUUID();
-
-    // Add system message
+    // 6. Setup initial system message
     if (config.systemPrompt) {
       this.conversationHistory.push({
         role: 'system',
@@ -71,138 +104,155 @@ export class AgentRuntime {
     // Trigger before_prompt hook
     await this.hookEngine.trigger('before_prompt', { input }, 'agent');
 
-    // Add user message
+    // Add user message to conversation history
     this.conversationHistory.push({
       role: 'user',
       content: input
     });
 
     let totalTokens = 0;
-    const toolCalls: ToolCall[] = [];
-    const toolResults: Record<string, any> = {};
+    const turnToolCalls: ToolCall[] = [];
+    const turnToolResults: Record<string, unknown> = {};
+    const recordedToolExecutions: Array<{
+      tool: string;
+      args: unknown;
+      result: unknown;
+      success: boolean;
+      duration: number;
+    }> = [];
 
-    // Agent loop: LLM → Tool → LLM until done
     let turn = 0;
     const maxTurns = this.config.maxTurns || 10;
+    const maxOutputSize = this.config.maxOutputSize || 100000;
+
+    let finalAssistantMessage = '';
 
     while (turn < maxTurns) {
       turn++;
 
-      // Get available tools
+      // Get available tools if enabled
       const tools = this.config.enableTools
         ? this.toolEngine.listAll().map(reg => ({
             name: reg.tool.name,
             description: reg.tool.description,
-            parameters: reg.tool.schema.parameters
+            parameters: (reg.tool.schema.parameters as Record<string, unknown>) || {}
           }))
         : undefined;
 
-      // Call LLM
+      // Call LLM provider
       const request: GenerateRequest = {
         messages: this.conversationHistory,
         tools,
-        maxTokens: 4096
+        maxTokens: this.config.maxTokens || 4096,
+        temperature: this.config.temperature ?? 0.7
       };
 
       const response = await this.provider.generate(request, {
         provider: this.config.provider,
-        model: this.config.model
+        model: this.config.model,
+        apiKey: this.config.apiKey,
+        baseUrl: this.config.baseUrl,
+        temperature: this.config.temperature,
+        maxTokens: this.config.maxTokens
       });
 
       totalTokens += response.usage.totalTokens;
+      finalAssistantMessage = response.content;
 
-      // Add assistant response
+      // Truncate output if exceeding max output size
+      if (finalAssistantMessage.length > maxOutputSize) {
+        finalAssistantMessage = finalAssistantMessage.slice(0, maxOutputSize) + '\n[Output truncated]';
+      }
+
+      // Add assistant response to history
       this.conversationHistory.push({
         role: 'assistant',
-        content: response.content,
+        content: finalAssistantMessage,
         toolCalls: response.toolCalls
       });
 
-      // If no tool calls, we're done
+      // If no tool calls, turn is complete
       if (!response.toolCalls || response.toolCalls.length === 0) {
         // Trigger after_prompt hook
-        await this.hookEngine.trigger('after_prompt', {
-          response: response.content
-        }, 'agent');
+        await this.hookEngine.trigger('after_prompt', { response: finalAssistantMessage }, 'agent');
 
-        // Save to memory
-        this.memoryStore.addMemory({
-          sessionId: this.sessionId,
-          type: 'user_input',
-          content: input,
-          metadata: {}
-        });
-
-        this.memoryStore.addMemory({
-          sessionId: this.sessionId,
-          type: 'agent_response',
-          content: response.content,
+        // Atomically record turn in persistent SQLite database
+        this.memoryStore.recordTurnTransaction(this.sessionId, {
+          userInput: input,
+          assistantResponse: finalAssistantMessage,
+          toolExecutions: recordedToolExecutions,
           metadata: { tokens: totalTokens }
         });
 
         return {
           userMessage: input,
-          assistantMessage: response.content,
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          toolResults: Object.keys(toolResults).length > 0 ? toolResults : undefined,
-          tokensUsed: totalTokens
+          assistantMessage: finalAssistantMessage,
+          toolCalls: turnToolCalls.length > 0 ? turnToolCalls : undefined,
+          toolResults: Object.keys(turnToolResults).length > 0 ? turnToolResults : undefined,
+          tokensUsed: totalTokens,
+          sessionId: this.sessionId
         };
       }
 
-      // Execute tool calls
+      // Execute each tool call requested by LLM
       for (const toolCall of response.toolCalls) {
-        toolCalls.push(toolCall);
+        turnToolCalls.push(toolCall);
 
-        // Trigger before_tool hook
-        await this.hookEngine.trigger('before_tool', {
-          tool: toolCall.name,
-          args: toolCall.arguments
-        }, 'agent');
-
-        // Check permissions
-        const permission = this.permissionManager.check({
-          resource: `tool.${toolCall.name}`,
-          requester: 'agent'
-        });
-
-        if (!permission.allowed) {
-          toolResults[toolCall.id] = { error: 'Permission denied' };
-          continue;
+        // Safe JSON parsing of tool arguments
+        let parsedArgs: unknown = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.arguments);
+        } catch {
+          parsedArgs = { raw: toolCall.arguments };
         }
 
-        // Execute tool
-        const result = await this.toolEngine.execute(
+        // Trigger before_tool hook
+        await this.hookEngine.trigger('before_tool', { tool: toolCall.name, args: parsedArgs }, 'agent');
+
+        const toolStartTime = Date.now();
+
+        // Execute tool via ToolEngine (which enforces SecurityEngine)
+        const execResult = await this.toolEngine.execute(
           toolCall.name,
-          JSON.parse(toolCall.arguments),
-          { sessionId: this.sessionId, agent: 'hemmers' }
+          parsedArgs,
+          { sessionId: this.sessionId, agent: 'hemmers' },
+          { workspaceRoot: this.workspaceRoot }
         );
 
-        toolResults[toolCall.id] = result.success ? result.result : { error: result.error };
+        const duration = Date.now() - toolStartTime;
+        const toolOutput = execResult.success ? execResult.result : { error: execResult.error };
+        turnToolResults[toolCall.id] = toolOutput;
+
+        recordedToolExecutions.push({
+          tool: toolCall.name,
+          args: parsedArgs,
+          result: toolOutput,
+          success: execResult.success,
+          duration
+        });
 
         // Trigger after_tool hook
-        await this.hookEngine.trigger('after_tool', {
-          tool: toolCall.name,
-          result: result.success
-        }, 'agent');
+        await this.hookEngine.trigger('after_tool', { tool: toolCall.name, success: execResult.success }, 'agent');
 
-        // Add tool result to conversation
+        // Add tool result to conversation history
         this.conversationHistory.push({
           role: 'tool',
-          content: JSON.stringify(toolResults[toolCall.id]),
+          name: toolCall.name,
+          content: typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput),
           toolCallId: toolCall.id
         });
       }
-
-      // Continue loop to let LLM process tool results
     }
 
-    throw new Error(`Agent exceeded maximum turns (${maxTurns})`);
+    throw new Error(`Agent exceeded maximum turn limit of ${maxTurns}`);
   }
 
   /**
    * Execute with streaming
    */
   async *executeStream(input: string): AsyncGenerator<string, AgentTurn, unknown> {
+    await this.hookEngine.trigger('before_prompt', { input }, 'agent');
+
     this.conversationHistory.push({
       role: 'user',
       content: input
@@ -210,7 +260,9 @@ export class AgentRuntime {
 
     const request: GenerateRequest = {
       messages: this.conversationHistory,
-      stream: true
+      stream: true,
+      maxTokens: this.config.maxTokens || 4096,
+      temperature: this.config.temperature ?? 0.7
     };
 
     let fullResponse = '';
@@ -218,7 +270,9 @@ export class AgentRuntime {
 
     for await (const chunk of this.provider.generateStream(request, {
       provider: this.config.provider,
-      model: this.config.model
+      model: this.config.model,
+      apiKey: this.config.apiKey,
+      baseUrl: this.config.baseUrl
     })) {
       if (chunk.done) break;
       fullResponse += chunk.delta;
@@ -230,10 +284,20 @@ export class AgentRuntime {
       content: fullResponse
     });
 
+    await this.hookEngine.trigger('after_prompt', { response: fullResponse }, 'agent');
+
+    // Save to memory
+    this.memoryStore.recordTurnTransaction(this.sessionId, {
+      userInput: input,
+      assistantResponse: fullResponse,
+      metadata: { tokens: totalTokens }
+    });
+
     return {
       userMessage: input,
       assistantMessage: fullResponse,
-      tokensUsed: totalTokens
+      tokensUsed: totalTokens,
+      sessionId: this.sessionId
     };
   }
 
@@ -245,11 +309,16 @@ export class AgentRuntime {
   }
 
   /**
-   * Clear conversation
+   * Clear conversation history
    */
   clearHistory(): void {
-    const systemMessages = this.conversationHistory.filter(m => m.role === 'system');
-    this.conversationHistory = systemMessages;
+    this.conversationHistory = [];
+    if (this.config.systemPrompt) {
+      this.conversationHistory.push({
+        role: 'system',
+        content: this.config.systemPrompt
+      });
+    }
   }
 
   /**
@@ -257,5 +326,33 @@ export class AgentRuntime {
    */
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  /**
+   * Get tool engine
+   */
+  getToolEngine(): ToolEngine {
+    return this.toolEngine;
+  }
+
+  /**
+   * Get memory store
+   */
+  getMemoryStore(): MemoryStore {
+    return this.memoryStore;
+  }
+
+  /**
+   * Get security engine
+   */
+  getSecurityEngine(): SecurityEngine {
+    return this.securityEngine;
+  }
+
+  /**
+   * Close memory and resources
+   */
+  close(): void {
+    this.memoryStore.close();
   }
 }

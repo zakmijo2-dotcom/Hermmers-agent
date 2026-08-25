@@ -3,7 +3,7 @@
  * List installed skills, tools, and profiles
  */
 
-import { SkillRegistry } from '../../core/skills/registry';
+import { SkillRegistry } from '../../core/skills/registry.js';
 import { homedir } from 'os';
 import { join } from 'path';
 

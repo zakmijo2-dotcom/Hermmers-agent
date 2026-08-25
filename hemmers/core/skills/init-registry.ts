@@ -3,21 +3,27 @@
  * Populates the registry with official Hemmers skills
  */
 
-import { SkillRegistry } from '../core/skills/registry';
-import { readdirSync, readFileSync } from 'fs';
+import { SkillRegistry } from './registry.js';
+import { readdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import type { Skill } from '../core/types';
+import { fileURLToPath } from 'url';
+import type { Skill } from '../types/index.js';
 
-export function initializeRegistry() {
+export function initializeRegistry(): void {
   const hemmersHome = join(homedir(), '.hemmers');
   const skillRegistry = new SkillRegistry(hemmersHome);
 
-  const officialSkillsPath = join(__dirname, '..', 'skills', 'official');
+  const officialSkillsPath = fileURLToPath(new URL('../../skills/official', import.meta.url));
 
   console.log('📚 Initializing skills registry...\n');
 
   try {
+    if (!existsSync(officialSkillsPath)) {
+      console.warn(`⚠️ Official skills directory not found at: ${officialSkillsPath}`);
+      return;
+    }
+
     const skillFiles = readdirSync(officialSkillsPath).filter(f => f.endsWith('.json'));
 
     for (const file of skillFiles) {
@@ -30,9 +36,9 @@ export function initializeRegistry() {
         name: skill.name,
         version: skill.version,
         description: skill.description,
-        author: skill.metadata.author || 'Hemmers',
-        tags: skill.metadata.tags || [],
-        compatibility: skill.compatibility,
+        author: skill.metadata?.author || 'Hemmers',
+        tags: skill.metadata?.tags || [],
+        compatibility: skill.compatibility || [],
         dependencies: skill.dependencies || []
       });
 

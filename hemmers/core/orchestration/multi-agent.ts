@@ -3,7 +3,7 @@
  * Agent orchestration and handoff
  */
 
-import { IAgent, AgentRequest, AgentResponse } from '../../protocol/agent';
+import { IAgent, AgentRequest, AgentResponse } from '../../protocol/agent.js';
 import { randomUUID } from 'crypto';
 
 export interface AgentTask {

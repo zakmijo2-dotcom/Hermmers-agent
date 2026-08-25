@@ -4,7 +4,7 @@
  * Replaces MIJ's mocked learning with real evaluation
  */
 
-import { MemoryEntry } from '../types';
+import { MemoryEntry } from '../types/index.js';
 
 export interface ToolExecution {
   toolName: string;

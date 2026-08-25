@@ -3,10 +3,10 @@
  * Detects installed agents and sets up Hemmers
  */
 
-import { registry } from '../../adapters/registry';
-import { ClaudeCodeAdapter } from '../../adapters/claude-code/adapter';
-import { OpenCodeAdapter } from '../../adapters/opencode/adapter';
-import { PiAdapter } from '../../adapters/pi/adapter';
+import { registry } from '../../adapters/registry.js';
+import { ClaudeCodeAdapter } from '../../adapters/claude-code/adapter.js';
+import { OpenCodeAdapter } from '../../adapters/opencode/adapter.js';
+import { PiAdapter } from '../../adapters/pi/adapter.js';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -70,7 +70,14 @@ export async function initCommand() {
   }
 
   // Create initial config
-  const config = {
+  const config: {
+    version: string;
+    initialized: string;
+    agents: Record<string, { enabled: boolean; adapter: string; config: Record<string, unknown> }>;
+    memory: { path: string };
+    learning: { enabled: boolean; threshold: number; autoApply: boolean };
+    permissions: unknown[];
+  } = {
     version: '0.1.0',
     initialized: new Date().toISOString(),
     agents: {},
@@ -102,7 +109,7 @@ export async function initCommand() {
 
   // Initialize skills registry with official skills
   try {
-    const { initializeRegistry } = await import('../../core/skills/init-registry');
+    const { initializeRegistry } = await import('../../core/skills/init-registry.js');
     initializeRegistry();
   } catch (error) {
     console.warn('⚠️  Could not initialize skills registry:', (error as Error).message);

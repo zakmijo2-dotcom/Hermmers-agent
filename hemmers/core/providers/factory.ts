@@ -3,11 +3,11 @@
  * Centralized provider creation and management
  */
 
-import { ModelProvider } from './base';
-import { AnthropicProvider } from './anthropic';
-import { OpenAIProvider } from './openai';
-import { GoogleProvider } from './google';
-import { OllamaProvider } from './ollama';
+import { ModelProvider } from './base.js';
+import { AnthropicProvider } from './anthropic.js';
+import { OpenAIProvider } from './openai.js';
+import { GoogleProvider } from './google.js';
+import { OllamaProvider } from './ollama.js';
 
 export type ProviderType = 'anthropic' | 'openai' | 'google' | 'ollama';
 

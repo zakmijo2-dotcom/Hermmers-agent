@@ -3,7 +3,7 @@
  * Package management for Hemmers skills
  */
 
-import { Skill } from '../types';
+import { Skill } from '../types/index.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { join } from 'path';
 
@@ -89,6 +89,18 @@ export class SkillRegistry {
 
     index.skills[metadata.name] = metadata;
     this.saveIndex(index);
+  }
+  /**
+   * Unregister a skill from index
+   */
+  unregister(name: string): boolean {
+    const index = this.loadIndex();
+    if (index.skills[name]) {
+      delete index.skills[name];
+      this.saveIndex(index);
+      return true;
+    }
+    return false;
   }
 
   /**

@@ -3,11 +3,11 @@
  * Lists detected agents and their capabilities
  */
 
-import { registry } from '../../adapters/registry';
-import { ClaudeCodeAdapter } from '../../adapters/claude-code/adapter';
-import { OpenCodeAdapter } from '../../adapters/opencode/adapter';
-import { PiAdapter } from '../../adapters/pi/adapter';
-import { CapabilityScorer } from '../../adapters/capabilities';
+import { registry } from '../../adapters/registry.js';
+import { ClaudeCodeAdapter } from '../../adapters/claude-code/adapter.js';
+import { OpenCodeAdapter } from '../../adapters/opencode/adapter.js';
+import { PiAdapter } from '../../adapters/pi/adapter.js';
+import { CapabilityScorer } from '../../adapters/capabilities.js';
 
 export async function agentsCommand() {
   console.log('🔍 Detecting agents...\n');

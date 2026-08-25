@@ -3,8 +3,8 @@
  * Central registry for all agent adapters
  */
 
-import { AgentAdapter } from './adapter-api';
-import { AgentDetection } from '../core/types';
+import { AgentAdapter } from './adapter-api.js';
+import { AgentDetection } from '../core/types/index.js';
 
 export class AdapterRegistry {
   private adapters: Map<string, AgentAdapter> = new Map();

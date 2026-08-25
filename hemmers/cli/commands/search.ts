@@ -3,7 +3,7 @@
  * Search for skills in the registry
  */
 
-import { SkillRegistry } from '../../core/skills/registry';
+import { SkillRegistry } from '../../core/skills/registry.js';
 import { homedir } from 'os';
 import { join } from 'path';
 

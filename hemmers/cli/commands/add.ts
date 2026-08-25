@@ -3,8 +3,8 @@
  * Install a skill, tool, or profile
  */
 
-import { SkillRegistry } from '../../core/skills/registry';
-import { registry as adapterRegistry } from '../../adapters/registry';
+import { SkillRegistry } from '../../core/skills/registry.js';
+import { registry as adapterRegistry } from '../../adapters/registry.js';
 import { homedir } from 'os';
 import { join } from 'path';
 

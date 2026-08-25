@@ -3,7 +3,7 @@
  * Universal lifecycle hooks with adapter translation
  */
 
-import { Hook, HookType, HookContext, HookHandler } from '../types';
+import { Hook, HookType, HookContext, HookHandler } from '../types/index.js';
 
 export interface RegisteredHook {
   id: string;

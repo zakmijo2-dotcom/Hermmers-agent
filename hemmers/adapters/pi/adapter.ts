@@ -3,7 +3,7 @@
  * Integrates Hemmers with Pi agent
  */
 
-import { BaseAdapter } from '../adapter-api';
+import { BaseAdapter } from '../adapter-api.js';
 import {
   AgentDetection,
   AgentCapabilities,
@@ -12,8 +12,8 @@ import {
   Tool,
   HemmersConfig,
   HealthStatus
-} from '../../core/types';
-import { CapabilityDetector } from '../capabilities';
+} from '../../core/types/index.js';
+import { CapabilityDetector } from '../capabilities.js';
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';

@@ -3,7 +3,7 @@
  * Enhanced from original MIJ skill-manager with versioning and validation
  */
 
-import { Skill } from '../types';
+import { Skill } from '../types/index.js';
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { join } from 'path';
 

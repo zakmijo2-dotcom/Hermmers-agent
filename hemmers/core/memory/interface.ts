@@ -3,7 +3,7 @@
  * Provides Hermès-style memory operations
  */
 
-import { MemoryStore, MemoryEntry, Session } from './memory-store';
+import { MemoryStore, MemoryEntry, Session } from './store.js';
 
 export interface MemoryContext {
   currentSessionId: string;
@@ -21,32 +21,38 @@ export class MemoryInterface {
   async loadContext(sessionId: string, currentInput: string, options?: {
     recentLimit?: number;
     searchLimit?: number;
+    includeHistory?: boolean;
   }): Promise<MemoryContext> {
-    this.store.updateSessionAccess(sessionId);
+    const recentLimit = options?.recentLimit ?? 10;
+    const searchLimit = options?.searchLimit ?? 5;
+    const includeHistory = options?.includeHistory ?? true;
 
-    // Get recent memories from current session
-    const recent = this.store.getMemories(sessionId, {
-      limit: options?.recentLimit || 20
+    // 1. Get recent memories from current session
+    const recentMemories = this.store.getMemories(sessionId, {
+      limit: recentLimit
     });
 
-    // Search across all sessions for relevant context
-    const searched = currentInput.length > 10
-      ? this.store.searchMemories(currentInput, {
-          limit: options?.searchLimit || 5
-        })
+    // 2. Search cross-session memories for relevant context (FTS)
+    const searchResults = this.store.searchMemories(currentInput, {
+      limit: searchLimit
+    });
+
+    // 3. Deduplicate (prefer search results that aren't already in recent)
+    const recentIds = new Set(recentMemories.map(m => m.id));
+    const uniqueSearchResults = searchResults.filter(m => !recentIds.has(m.id));
+
+    // Combine
+    const relevantMemories = [...recentMemories, ...uniqueSearchResults];
+
+    // 4. Get session genealogy
+    const sessionHistory = includeHistory
+      ? this.store.getSessionAncestry(sessionId)
       : [];
-
-    // Combine and deduplicate
-    const memoryMap = new Map<string, MemoryEntry>();
-    [...recent, ...searched].forEach(m => memoryMap.set(m.id, m));
-
-    // Get session ancestry for lineage
-    const ancestry = this.store.getSessionAncestry(sessionId);
 
     return {
       currentSessionId: sessionId,
-      relevantMemories: Array.from(memoryMap.values()),
-      sessionHistory: ancestry
+      relevantMemories,
+      sessionHistory
     };
   }
 
@@ -54,7 +60,7 @@ export class MemoryInterface {
    * Record agent turn in memory
    */
   recordTurn(sessionId: string, userInput: string, agentResponse: string): void {
-    this.store.addMemory({
+    const userMemory = this.store.addMemory({
       sessionId,
       type: 'user_input',
       content: userInput
@@ -63,7 +69,8 @@ export class MemoryInterface {
     this.store.addMemory({
       sessionId,
       type: 'agent_response',
-      content: agentResponse
+      content: agentResponse,
+      parentId: userMemory.id
     });
   }
 
@@ -73,35 +80,43 @@ export class MemoryInterface {
   recordToolExecution(
     sessionId: string,
     toolName: string,
-    args: any,
-    result: any,
+    args: unknown,
+    result: unknown,
     parentId?: string,
     success: boolean = true,
     duration: number = 0
   ): string {
-    const callEntry = this.store.addMemory({
+    const callMemory = this.store.addMemory({
       sessionId,
       type: 'tool_call',
-      content: `${toolName}(${JSON.stringify(args)})`,
-      metadata: { toolName, args, success, duration },
+      content: `Tool: ${toolName}`,
+      metadata: {
+        toolName,
+        args,
+        duration
+      },
       parentId
     });
 
-    const resultEntry = this.store.addMemory({
+    const resultMemory = this.store.addMemory({
       sessionId,
       type: 'tool_result',
-      content: JSON.stringify(result),
-      metadata: { toolName, result, success, duration },
-      parentId: callEntry.id
+      content: typeof result === 'string' ? result : JSON.stringify(result),
+      metadata: {
+        toolName,
+        success,
+        duration
+      },
+      parentId: callMemory.id
     });
 
-    return resultEntry.id;
+    return resultMemory.id;
   }
 
   /**
    * Record learned skill pattern
    */
-  recordSkillLearned(sessionId: string, skillName: string, pattern: any): void {
+  recordSkillLearned(sessionId: string, skillName: string, pattern: unknown): void {
     this.store.addMemory({
       sessionId,
       type: 'skill_learned',
@@ -113,9 +128,8 @@ export class MemoryInterface {
   /**
    * Find similar past tool executions (for learning loop)
    */
-  findSimilarToolExecutions(toolName: string, args: any, limit: number = 5): MemoryEntry[] {
-    const query = `${toolName} ${JSON.stringify(args)}`;
-    return this.store.searchMemories(query, {
+  findSimilarToolExecutions(toolName: string, args: unknown, limit: number = 5): MemoryEntry[] {
+    return this.store.searchMemories(toolName, {
       type: 'tool_call',
       limit
     });
@@ -124,10 +138,14 @@ export class MemoryInterface {
   /**
    * Get all learned skills
    */
-  getLearnedSkills(limit?: number): MemoryEntry[] {
+  getLearnedSkills(limit: number = 50): MemoryEntry[] {
     return this.store.searchMemories('Learned skill', {
       type: 'skill_learned',
-      limit: limit || 100
+      limit
     });
+  }
+
+  getStore(): MemoryStore {
+    return this.store;
   }
 }

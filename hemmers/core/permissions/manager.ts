@@ -3,7 +3,7 @@
  * Manages resource access control for skills, tools, and extensions
  */
 
-import { Permission, PermissionRule, PermissionAction } from '../types';
+import { Permission, PermissionRule, PermissionAction } from '../types/index.js';
 
 export interface PermissionRequest {
   resource: string;
@@ -40,6 +40,7 @@ export class PermissionManager {
 
   /**
    * Check if permission is allowed
+   * Deny rules ALWAYS take precedence over allow rules when conflicting
    */
   check(request: PermissionRequest): PermissionDecision {
     // Check cache first
@@ -52,26 +53,56 @@ export class PermissionManager {
       };
     }
 
-    // Find matching rule
+    let matchingDeny: PermissionRule | null = null;
+    let matchingAsk: PermissionRule | null = null;
+    let matchingAllow: PermissionRule | null = null;
+
+    // Find all matching rules
     for (const rule of this.rules) {
       if (this.matchesRule(request, rule)) {
-        const allowed = rule.action === 'allow';
-
-        // Cache denials
-        if (!allowed) {
-          this.deniedCache.add(cacheKey);
+        if (rule.action === 'deny') {
+          matchingDeny = rule;
+          break; // Deny is immediately terminal
+        } else if (rule.action === 'ask') {
+          if (!matchingAsk) matchingAsk = rule;
+        } else if (rule.action === 'allow') {
+          if (!matchingAllow) matchingAllow = rule;
         }
-
-        return {
-          allowed,
-          action: rule.action,
-          reason: allowed ? 'Matched allow rule' : 'Matched deny rule',
-          rule
-        };
       }
     }
 
-    // Default: ask
+    // 1. Deny wins
+    if (matchingDeny) {
+      this.deniedCache.add(cacheKey);
+      return {
+        allowed: false,
+        action: 'deny',
+        reason: 'Matched deny rule (deny takes precedence)',
+        rule: matchingDeny
+      };
+    }
+
+    // 2. Ask wins over allow
+    if (matchingAsk) {
+      return {
+        allowed: false,
+        action: 'ask',
+        reason: 'Matched ask rule (requires user confirmation)',
+        rule: matchingAsk
+      };
+    }
+
+    // 3. Allow
+    if (matchingAllow) {
+      return {
+        allowed: true,
+        action: 'allow',
+        reason: 'Matched allow rule',
+        rule: matchingAllow
+      };
+    }
+
+    // 4. Default: ask
     return {
       allowed: false,
       action: 'ask',
@@ -121,7 +152,7 @@ export class PermissionManager {
     // Exact match
     if (ruleScope === requestScope) return true;
 
-    // Wildcard match
+    // Wildcard match (e.g., '/project/*' matches '/project/src/index.ts')
     if (ruleScope.endsWith('/*')) {
       const prefix = ruleScope.slice(0, -2);
       return requestScope.startsWith(prefix);
@@ -131,82 +162,16 @@ export class PermissionManager {
   }
 
   /**
-   * Grant permission
-   */
-  grant(resource: string, scope?: string): void {
-    this.addRule({
-      permission: { resource, scope },
-      action: 'allow'
-    });
-  }
-
-  /**
-   * Deny permission
-   */
-  deny(resource: string, scope?: string): void {
-    this.addRule({
-      permission: { resource, scope },
-      action: 'deny'
-    });
-  }
-
-  /**
-   * Clear all rules
-   */
-  clearRules(): void {
-    this.rules = [];
-    this.deniedCache.clear();
-  }
-
-  /**
-   * Get all rules
-   */
-  getRules(): PermissionRule[] {
-    return [...this.rules];
-  }
-
-  /**
-   * Clear denied cache
+   * Clear denial cache
    */
   clearCache(): void {
     this.deniedCache.clear();
   }
 
   /**
-   * Export rules as JSON
+   * Export all rules
    */
-  export(): string {
-    return JSON.stringify(this.rules, null, 2);
-  }
-
-  /**
-   * Import rules from JSON
-   */
-  import(json: string): void {
-    const rules = JSON.parse(json) as PermissionRule[];
-    this.rules = rules;
-  }
-
-  /**
-   * Get permission statistics
-   */
-  getStats(): {
-    totalRules: number;
-    allowRules: number;
-    denyRules: number;
-    askRules: number;
-    cachedDenials: number;
-  } {
-    const allow = this.rules.filter(r => r.action === 'allow').length;
-    const deny = this.rules.filter(r => r.action === 'deny').length;
-    const ask = this.rules.filter(r => r.action === 'ask').length;
-
-    return {
-      totalRules: this.rules.length,
-      allowRules: allow,
-      denyRules: deny,
-      askRules: ask,
-      cachedDenials: this.deniedCache.size
-    };
+  getRules(): PermissionRule[] {
+    return [...this.rules];
   }
 }

@@ -3,7 +3,7 @@
  * Token-aware context management with compaction and retrieval
  */
 
-import { MemoryEntry } from '../types';
+import { MemoryEntry } from '../types/index.js';
 
 export interface ContextSegment {
   id: string;

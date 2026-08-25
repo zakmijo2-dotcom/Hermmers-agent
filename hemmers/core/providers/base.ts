@@ -1,6 +1,6 @@
 /**
  * Model Provider Interface
- * Universal abstraction for LLM providers (OpenAI, Anthropic, Google, etc.)
+ * Universal abstraction for LLM providers (Anthropic, OpenAI, Google, Ollama)
  */
 
 export interface ModelCapabilities {
@@ -22,6 +22,8 @@ export interface ModelConfig {
   maxTokens?: number;
   topP?: number;
   stopSequences?: string[];
+  signal?: AbortSignal;
+  timeout?: number;
 }
 
 export interface Message {
@@ -29,6 +31,7 @@ export interface Message {
   content: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];
+  name?: string;
 }
 
 export interface ToolCall {
@@ -39,27 +42,30 @@ export interface ToolCall {
 
 export interface ToolResult {
   toolCallId: string;
-  result: string;
-}
-
-export interface GenerateRequest {
-  messages: Message[];
-  tools?: ToolDefinition[];
-  temperature?: number;
-  maxTokens?: number;
-  stream?: boolean;
+  result: unknown;
+  error?: string;
 }
 
 export interface ToolDefinition {
   name: string;
   description: string;
-  parameters: Record<string, any>; // JSON Schema
+  parameters: Record<string, unknown>;
+}
+
+export interface GenerateRequest {
+  messages: Message[];
+  system?: string;
+  tools?: ToolDefinition[];
+  temperature?: number;
+  maxTokens?: number;
+  stream?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface GenerateResponse {
   content: string;
   toolCalls?: ToolCall[];
-  finishReason: 'stop' | 'length' | 'tool_calls' | 'error';
+  finishReason: 'stop' | 'tool_calls' | 'length' | 'content_filter' | 'error';
   usage: {
     promptTokens: number;
     completionTokens: number;
@@ -69,8 +75,58 @@ export interface GenerateResponse {
 
 export interface StreamChunk {
   delta: string;
-  toolCall?: Partial<ToolCall>;
+  toolCalls?: ToolCall[];
   done: boolean;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
+/**
+ * Executes a network call with exponential backoff retry for transient errors
+ */
+export async function executeWithRetry<T>(
+  fn: () => Promise<T>,
+  options?: { maxRetries?: number; baseDelayMs?: number; signal?: AbortSignal }
+): Promise<T> {
+  const maxRetries = options?.maxRetries ?? 3;
+  const baseDelayMs = options?.baseDelayMs ?? 300;
+  const signal = options?.signal;
+
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (signal?.aborted) {
+      throw new Error('Operation aborted');
+    }
+
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const isRetryable =
+        error instanceof Error &&
+        (error.message.includes('429') ||
+          error.message.includes('500') ||
+          error.message.includes('502') ||
+          error.message.includes('503') ||
+          error.message.includes('504') ||
+          error.message.includes('ECONNRESET') ||
+          error.message.includes('ETIMEDOUT') ||
+          error.message.includes('fetch failed'));
+
+      if (attempt === maxRetries || !isRetryable) {
+        throw error;
+      }
+
+      const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 100;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+
+  throw lastError;
 }
 
 export abstract class ModelProvider {
@@ -78,7 +134,7 @@ export abstract class ModelProvider {
   abstract readonly name: string;
 
   /**
-   * Get capabilities of a specific model
+   * Get provider capabilities for specific model
    */
   abstract getCapabilities(model: string): ModelCapabilities;
 
@@ -96,12 +152,12 @@ export abstract class ModelProvider {
   ): AsyncGenerator<StreamChunk, void, unknown>;
 
   /**
-   * Check if provider is available
+   * Check if provider is available (API key set, local server running, etc.)
    */
   abstract isAvailable(): Promise<boolean>;
 
   /**
-   * List available models
+   * List available models for this provider
    */
   abstract listModels(): Promise<string[]>;
 }

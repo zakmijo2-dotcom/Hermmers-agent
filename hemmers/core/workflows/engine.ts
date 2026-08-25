@@ -3,7 +3,7 @@
  * Define and execute multi-step workflows
  */
 
-import { IAgent, AgentRequest } from '../../protocol/agent';
+import { IAgent, AgentRequest } from '../../protocol/agent.js';
 
 export interface WorkflowStep {
   id: string;
@@ -217,19 +217,32 @@ export class WorkflowEngine {
   /**
    * Execute loop step
    */
-  private async executeLoopStep(step: WorkflowStep, context: WorkflowContext): Promise<any> {
-    const items = this.resolveVariables(step.config.items, context) as any[];
-    const results = [];
+  private async executeLoopStep(step: WorkflowStep, context: WorkflowContext): Promise<{ results: unknown[] }> {
+    let items: unknown[] = [];
+    if (Array.isArray(step.config.items)) {
+      items = step.config.items;
+    } else if (typeof step.config.items === 'string') {
+      const resolved = this.resolveVariables(step.config.items, context);
+      try {
+        const parsed: unknown = JSON.parse(resolved);
+        items = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        items = resolved.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+
+    const results: unknown[] = [];
 
     for (const item of items) {
       context.variables[step.config.itemVar || 'item'] = item;
 
       const stepId = step.config.loopStep;
-      const workflow = this.workflows.get(context.workflowId)!;
-      const loopStep = workflow.steps.find(s => s.id === stepId)!;
-
-      const result = await this.executeStep(loopStep, context);
-      results.push(result);
+      const workflow = this.workflows.get(context.workflowId);
+      const loopStep = workflow?.steps.find(s => s.id === stepId);
+      if (loopStep) {
+        const result = await this.executeStep(loopStep, context);
+        results.push(result);
+      }
     }
 
     return { results };

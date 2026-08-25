@@ -12,7 +12,7 @@ import {
   HemmersConfig,
   HealthStatus,
   DiagnosticReport
-} from '../core/types';
+} from '../core/types/index.js';
 
 /**
  * AgentAdapter - Universal interface for agent integration

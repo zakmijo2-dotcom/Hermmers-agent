@@ -1,486 +1,164 @@
-# Hemmers - Universal AI Agent Enhancement Platform
+# Hemmers - Universal AI Agent Enhancement Platform & Secure Runtime
 
-**Transform any AI coding agent into a more capable, persistent, and intelligent assistant.**
+**Transform any AI coding agent into a more capable, persistent, and secure assistant.**
 
-Hemmers is not another AI agent. It's an **enhancement layer** that makes existing AI coding agents (Claude Code, OpenCode, Pi, Codex, Cline, Hermes, etc.) more powerful by adding:
-
-- 🧠 **Persistent Memory** - Cross-session memory with SQLite + FTS5
-- 📚 **Autonomous Learning** - Evidence-based skill generation from patterns
-- 🎯 **Context Intelligence** - Token-aware context management
-- 🔐 **Security Layer** - Permission system with audit logging
-- 🔧 **Real Tool Execution** - 6+ working tools with permission checks
-- 🤖 **Multi-Agent Orchestration** - Coordinate multiple agents
-- 🔌 **MCP Integration** - Model Context Protocol support
-- 🌐 **Universal Protocol** - Works with any AI agent
+Hemmers is an **enhancement layer and secure execution runtime** that integrates with AI coding agents (Claude Code, OpenCode, Pi, Codex, Cline, Hermes, etc.) to provide persistent memory, multi-provider LLM routing, safe tool execution, and fine-grained security policies.
 
 ---
 
-## Quick Start
+## 📊 Feature Status & Implementation Matrix
+
+| Component | Status | Details & Implementation Notes |
+|---|---|---|
+| **Packaging & Build** | `implemented` | Unified `hemmers` package, ES module architecture, `main`/`bin`/`exports`, tested with `npm pack` |
+| **Security Engine** | `implemented` | Path traversal protection, SSRF guard, command spawn without shell concatenation, approval tokens, audit logging with secret redaction |
+| **Permission System** | `implemented` | Scoped permission evaluation where `deny` strictly takes precedence over `allow` |
+| **Persistent Memory** | `implemented` | SQLite-backed cross-session memory with versioned migrations, foreign key constraints, atomic turn transactions, and FTS5 search |
+| **Enhanced Memory Store** | `implemented` | Memory scopes, importance scoring, TTL-based expiration, deduplication, contradiction detection, and consolidation |
+| **Model Providers** | `implemented` | Canonical message model across Anthropic, OpenAI, Google, and Ollama; preserves system messages and formats tool calls |
+| **Agent Runtime Loop** | `implemented` | Autonomous execution turn, streaming support with token counting, safe tool argument parsing, max turn/output limits |
+| **CLI & Diagnostics** | `implemented` | `init`, `agents`, `doctor`, `add`, `remove`, `list`, `search`, `profile` with `--json` automation support and exit codes |
+| **Agent Adapters** | `partial` | Detection and capability scoring for Claude Code, OpenCode, Pi, Codex, Cline, Hermes, Antigravity |
+| **Autonomous Learning** | `partial` | Pattern frequency and confidence scoring in `LearningEngine` |
+| **MCP Integration** | `partial` | Model Context Protocol client transport stubs |
+| **Multi-Agent Orchestration** | `partial` | Task handoff and sub-agent execution coordination in `MultiAgentOrchestrator` |
+
+---
+
+## 🚀 Quick Start
+
+### 1. Installation & Build
 
 ```bash
+# Clone the repository
+git clone https://github.com/zakmijo2-dotcom/Hermmers-agent.git
+cd Hermmers-agent
+
 # Install dependencies
 npm install
 
-# Initialize Hemmers
-npx tsx hemmers/cli/index.ts init
+# Typecheck and build
+npm run typecheck
+npm run build
 
-# List detected agents
-npx tsx hemmers/cli/index.ts agents
-
-# Search for skills
-npx tsx hemmers/cli/index.ts search ui
-
-# Install a skill
-npx tsx hemmers/cli/index.ts add ui-ux-pro-max
+# Run automated test suite
+npm test
 ```
 
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────┐
-│           HEMMERS CORE                  │
-│  Memory | Learning | Context | Security │
-└────────────────┬────────────────────────┘
-                 │
-        Universal Protocol
-                 │
-    ┌────────────┼────────────┐
-    │            │            │
-Anthropic      OpenAI       MCP
-    │            │            │
-Claude Code   OpenCode      Tools
-    │            │
-   Pi         Codex
-```
-
----
-
-## Features
-
-### 🧠 Persistent Memory
-- **SQLite + FTS5** for full-text search
-- **Cross-session** memory persistence
-- **Multiple scopes**: global, project, session, agent
-- **Importance scoring** and automatic consolidation
-
-### 📚 Autonomous Learning
-- **Evidence-based** skill generation (no mocks)
-- **Pattern detection**: single-tool, sequences, error-recovery
-- **Confidence scoring** based on execution history
-- **Skill validation** before activation
-
-### 🎯 Context Intelligence
-- **Token estimation** and budget management
-- **Smart compaction** preserving important information
-- **Relevance scoring** for memory retrieval
-- **Content summarization** for large outputs
-
-### 🔐 Security & Permissions
-- **Policy engine** with allow/deny/approve rules
-- **Risk assessment**: low/medium/high/critical
-- **Approval queue** for high-risk actions
-- **Audit logging** with filtering and export
-
-### 🔧 Real Tool Execution
-```typescript
-// Standard tools included
-- readFile: Read file contents
-- writeFile: Write to file
-- shell: Execute shell commands
-- listDirectory: List files
-- gitStatus: Git repository status
-- searchFiles: Search with grep
-```
-
-### 🤖 Multi-Agent Orchestration
-```typescript
-const orchestrator = new MultiAgentOrchestrator();
-
-// Create orchestration
-const orchId = orchestrator.createOrchestration([
-  plannerAgent,
-  coderAgent,
-  reviewerAgent
-]);
-
-// Add and assign tasks
-const taskId = orchestrator.addTask(orchId, 'Build feature X');
-await orchestrator.assignTask(orchId, taskId, 'coder');
-
-// Handoff between agents
-await orchestrator.handoff(orchId, 'coder', 'reviewer', context);
-```
-
-### 🔌 MCP Integration
-- **MCP client** for protocol support
-- **stdio/http/websocket** transports
-- **Tool/Resource/Prompt** discovery
-- **Automatic adaptation** to Hemmers tools
-
----
-
-## Real AI Agent
-
-Hemmers includes a complete AI agent runtime with:
-
-```typescript
-import { AgentRuntime } from './hemmers/core/runtime/agent';
-
-const agent = new AgentRuntime({
-  provider: 'anthropic',  // or 'openai'
-  model: 'claude-opus-5',
-  systemPrompt: 'You are a helpful coding assistant.',
-  enableTools: true
-});
-
-// Execute turn with real LLM
-const turn = await agent.executeTurn('List files in current directory');
-
-// Streaming support
-for await (const chunk of agent.executeStream('Explain this code')) {
-  process.stdout.write(chunk);
-}
-```
-
-**Agent Loop:**
-```
-User Input
-    ↓
-Context Loading
-    ↓
-LLM Request
-    ↓
-Tool Calls? ──No──→ Response
-    ↓ Yes
-Tool Execution
-    ↓
-Permission Check
-    ↓
-Tool Result
-    ↓
-LLM Request (with results)
-    ↓
-Response
-    ↓
-Memory + Learning
-```
-
----
-
-## Universal Agent Protocol
-
-Hemmers defines a universal protocol that any AI agent can implement:
-
-```typescript
-interface IAgent {
-  getMetadata(): AgentMetadata;
-  initialize(config): Promise<void>;
-  createSession(): Promise<AgentSession>;
-  request(request): Promise<AgentResponse>;
-  requestStream(request): AsyncGenerator;
-  executeTool(name, args): Promise<any>;
-  registerTool(tool): Promise<void>;
-  getSessionHistory(sessionId): Promise<Message[]>;
-  clearSession(sessionId): Promise<void>;
-  shutdown(): Promise<void>;
-}
-```
-
-This allows:
-- **Any agent** to use Hemmers enhancements
-- **Agent discovery** by capabilities
-- **Multi-agent** coordination
-- **Unified** tool and memory systems
-
----
-
-## Official Skills
-
-### Caveman
-Ultra-compressed communication for token efficiency.
-
-### Senior Coder
-Expert-level software engineering with best practices.
-
-### UI/UX Pro Max
-Professional UI/UX design with accessibility focus (WCAG 2.1).
-
----
-
-## CLI Commands
+### 2. CLI Usage
 
 ```bash
-# Initialize Hemmers
-hemmers init
+# Check system health and environment
+npx hemmers doctor
 
-# List detected agents and capabilities
-hemmers agents
+# Output diagnostics as JSON
+npx hemmers doctor --json
 
-# Search for skills
-hemmers search <query>
+# Initialize Hemmers and detect installed agents
+npx hemmers init
 
-# Install skill
-hemmers add <skill-name>
+# Inspect detected agents and capability rankings
+npx hemmers agents
+
+# Search and install skills
+npx hemmers search coder
+npx hemmers add senior-coder
 
 # List installed skills
-hemmers list
+npx hemmers list
 
-# Check system health
-hemmers doctor
+# List and activate profiles
+npx hemmers profile --list
+npx hemmers profile senior-developer
 ```
 
 ---
 
-## Supported Agents
+## 🔒 Security Architecture
 
-- ✅ **Claude Code** - Plugin-based integration
-- ✅ **OpenCode** - Skills + hooks system
-- ✅ **Pi** - Hooks-focused integration
-- ✅ **Codex** - Full adapter
-- ✅ **Cline** - VS Code extension
-- ✅ **Hermes** - Native integration
-- ✅ **Antigravity** - Basic adapter
+Hemmers enforces a **fail-closed security model** for all tool execution and agent actions:
+
+1. **Path Traversal Protection**: All filesystem access is normalized, canonicalized, and checked against the `workspaceRoot` using `resolveSafePath()`. Escaping via `../`, symlinks, or absolute paths outside the workspace is blocked.
+2. **Command Injection Prevention**: Process execution uses `safeSpawn()` with discrete argument arrays without shell concatenation (`shell: false`). Commands are validated against an allowlist and checked for dangerous patterns.
+3. **SSRF Guard**: `httpRequestTool` blocks requests to private IPv4/IPv6 ranges (e.g. `127.0.0.0/8`, `10.0.0.0/8`, `192.168.0.0/16`, `169.254.169.254`, `localhost`) by default.
+4. **Credential & Secret Protection**: Outbound sensitive headers (`Authorization`, `Cookie`, `X-Api-Key`) and sensitive environment variables (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, `OPENAI_*`, `ANTHROPIC_*`) are redacted from logs and blocked unless explicitly authorized.
+5. **Approval Tokens**: High-risk actions require cryptographic `ApprovalToken` instances linked to a SHA-256 hash of the request and an expiration timestamp.
+6. **Rule Precedence**: In the policy engine, `deny` rules **always** override `allow` rules.
 
 ---
 
-## Project Structure
+## 🧠 Memory & Sessions System
+
+- **Storage Engine**: SQLite with versioned schema migrations (`schema_migrations`), WAL mode, and enforced foreign keys.
+- **Atomic Transactions**: Turns, tool calls, and tool outputs are recorded in a single database transaction (`recordTurnTransaction`) ensuring consistency.
+- **Genealogy Tracking**: Sessions record `parentSessionId` to enable cross-session lineage and ancestor history traversal.
+- **Enhanced Scopes**: `GLOBAL`, `ORGANIZATION`, `PROJECT`, `SESSION`, `AGENT`.
+- **Quality Controls**: TTL expiration (`expireOldMemories`), content deduplication (`deduplicate`), and semantic contradiction detection (`detectContradictions`).
+
+---
+
+## 🤖 Supported Model Providers
+
+All providers adhere to the canonical `Message` and `ToolCall` contract:
+
+- **Anthropic**: Supports Claude 3.5 / 3.7 Sonnet, Claude 3 Opus with native tool use blocks and system prompt extraction.
+- **OpenAI**: Supports GPT-4o, GPT-4o-mini, o1, o3-mini with function tool calling.
+- **Google AI**: Supports Gemini 2.0 Flash, Gemini 1.5 Pro with `systemInstruction` and `functionCall` formatting.
+- **Ollama**: Supports local models (e.g. `llama3.2`, `qwen2.5-coder`, `deepseek-r1`) via the `/api/chat` endpoint.
+
+---
+
+## 📁 Repository Layout
 
 ```
-hemmers/
-├── core/
-│   ├── runtime/         # Real agent loop
-│   ├── providers/       # Anthropic, OpenAI
-│   ├── memory/          # SQLite + FTS5
-│   ├── learning/        # Pattern detection
-│   ├── skills/          # Skill management
-│   ├── context/         # Context intelligence
-│   ├── hooks/           # Lifecycle hooks
-│   ├── tools/           # Tool system
-│   ├── security/        # Security engine
-│   └── orchestration/   # Multi-agent
-│
-├── adapters/           # Agent adapters
-│   ├── claude-code/
-│   ├── opencode/
-│   ├── pi/
-│   ├── codex/
-│   ├── cline/
-│   ├── hermes/
-│   └── antigravity/
-│
-├── protocol/           # Universal protocol
-├── mcp/               # MCP integration
-├── skills/            # Official skills
-└── cli/               # Command-line interface
+Hemmers-agent/
+├── hemmers/
+│   ├── core/
+│   │   ├── runtime/         # AgentRuntime and HemmersAgent loop
+│   │   ├── providers/       # Anthropic, OpenAI, Google, Ollama, Factory
+│   │   ├── memory/          # SQLite adapter, MemoryStore, EnhancedMemoryStore
+│   │   ├── tools/           # Standard and extended tools, ToolEngine
+│   │   ├── security/        # SecurityEngine, safety utilities, approval tokens
+│   │   ├── permissions/     # PermissionManager with deny precedence
+│   │   ├── skills/          # SkillManager and SkillRegistry
+│   │   ├── context/         # ContextEngine and segmentation
+│   │   ├── hooks/           # HookEngine lifecycle hooks
+│   │   ├── learning/        # Pattern detection and skill generation
+│   │   ├── profiles/        # ProfileManager
+│   │   └── orchestration/   # Multi-agent orchestrator
+│   ├── adapters/            # Agent integration adapters (Claude Code, Pi, etc.)
+│   ├── cli/                 # CLI entrypoint and commands (init, doctor, agents, etc.)
+│   ├── mcp/                 # Model Context Protocol client
+│   └── protocol/            # Universal agent protocol
+├── tests/
+│   ├── unit/                # Unit tests for security, memory, tools, providers
+│   ├── integration/         # Integration tests for agent loop and adapters
+│   └── security/            # Security bypass prevention tests
+├── .github/workflows/       # GitHub Actions CI workflow
+├── package.json             # Unified package configuration
+└── tsconfig.json            # Strict TypeScript configuration
 ```
 
 ---
 
-## Requirements
-
-- Node.js >= 18
-- TypeScript >= 5.4
-- SQLite3 (better-sqlite3)
-- API keys: ANTHROPIC_API_KEY or OPENAI_API_KEY
-
----
-
-## Testing
+## 🧪 Testing
 
 ```bash
-# Run all tests
+# Run the entire test suite (55+ tests)
 npm test
 
-# Run specific tests
-npm run test:memory
-npm run test:learning
-npm run test:context
+# Run unit tests only
+npm run test:unit
+
+# Run integration tests only
 npm run test:integration
 
-# Type check
-npm run typecheck
-```
-
-**Test Coverage:** 100% (12+ test suites)
-
----
-
-## Documentation
-
-- [Architecture Overview](docs/AUDIT_REPORT.md)
-- [Phase 1: Core + Adapters](docs/PHASE1_COMPLETE.md)
-- [Phase 2: Skills + Registry](docs/PHASE2_COMPLETE.md)
-- [Phase 3: Learning + Context](docs/PHASE3_COMPLETE.md)
-- [Phase 4: Memory + Hooks + Tools](docs/PHASE4_COMPLETE.md)
-- [Critical Fixes](docs/CRITICAL_FIXES_COMPLETE.md)
-- [All Fixes Complete](docs/ALL_FIXES_COMPLETE.md)
-- [Hermès Comparison](docs/HERMES_COMPARISON.md)
-
----
-
-## Example: Real Agent Usage
-
-```typescript
-import { AgentRuntime } from './hemmers/core/runtime/agent';
-import { standardTools } from './hemmers/core/tools/standard';
-import { ToolEngine } from './hemmers/core/tools/engine';
-
-// Initialize agent
-const agent = new AgentRuntime({
-  provider: 'anthropic',
-  model: 'claude-opus-5',
-  enableTools: true
-});
-
-// Register tools
-const toolEngine = new ToolEngine();
-standardTools.forEach(tool => toolEngine.register(tool));
-
-// Execute with real LLM
-const response = await agent.executeTurn(
-  'Read package.json and tell me the version'
-);
-
-console.log(response.assistantMessage);
-// Agent will:
-// 1. Call readFile tool
-// 2. Get package.json content
-// 3. Parse and respond with version
+# Run security bypass prevention tests
+npm run test:security
 ```
 
 ---
 
-## Example: Multi-Agent Workflow
+## 📄 License
 
-```typescript
-import { MultiAgentOrchestrator } from './hemmers/core/orchestration/multi-agent';
-import { HemmersAgent } from './hemmers/core/runtime/hemmers-agent';
-
-// Create agents
-const planner = new HemmersAgent();
-const coder = new HemmersAgent();
-const reviewer = new HemmersAgent();
-
-await planner.initialize({ model: 'claude-opus-5' });
-await coder.initialize({ model: 'claude-opus-5' });
-await reviewer.initialize({ model: 'claude-sonnet-5' });
-
-// Orchestrate
-const orchestrator = new MultiAgentOrchestrator();
-const orchId = orchestrator.createOrchestration([planner, coder, reviewer]);
-
-// Define workflow
-orchestrator.addTask(orchId, 'Design authentication system');
-await orchestrator.assignTask(orchId, taskId1, 'planner');
-
-orchestrator.addTask(orchId, 'Implement authentication');
-await orchestrator.assignTask(orchId, taskId2, 'coder');
-
-orchestrator.addTask(orchId, 'Review implementation');
-await orchestrator.assignTask(orchId, taskId3, 'reviewer');
-
-// Get results
-const results = orchestrator.getResults(orchId);
-```
-
----
-
-## Stats
-
-- **Total Code:** ~10,000+ LOC
-- **Core Modules:** 15
-- **Adapters:** 7
-- **Official Skills:** 3
-- **Standard Tools:** 6
-- **Test Suites:** 12+
-- **Test Pass Rate:** 100%
-
----
-
-## What Makes Hemmers Different?
-
-### Not Another Agent
-Hemmers doesn't compete with Claude Code, OpenCode, or Pi. It **enhances** them.
-
-### Universal Layer
-Works with **any** AI coding agent through adapters.
-
-### Production Ready
-- Real LLM execution (not echo)
-- Evidence-based learning (no mocks)
-- Security and audit logging
-- Multi-agent orchestration
-
-### Open Architecture
-- Clean separation: core vs adapters
-- Universal protocol for any agent
-- MCP integration
-- Extensible tool system
-
----
-
-## Roadmap
-
-### ✅ Done
-- Real agent loop with LLM execution
-- Provider abstraction (Anthropic, OpenAI)
-- Tool system with permissions
-- Universal agent protocol
-- Security engine
-- Multi-agent orchestration
-- MCP integration
-- Enhanced memory system
-
-### 🔄 In Progress
-- VS Code extension
-- Additional providers (Ollama, Google)
-- Expanded tool library
-- Workflow engine
-
-### 🔜 Planned
-- Hosted skill registry
-- Community skills marketplace
-- Desktop applications
-- JetBrains plugin
-- Neovim/Zed integration
-
----
-
-## Contributing
-
-Contributions welcome! Please:
-
-1. Read the architecture docs
-2. Follow TypeScript conventions
-3. Add tests for new features
-4. Update documentation
-
----
-
-## License
-
-MIT
-
----
-
-## Credits
-
-Built with inspiration from:
-- **Hermès Agent** - Architecture patterns
-- **Claude Code** - Plugin system
-- **OpenCode** - Skills framework
-- **Pi** - Hooks system
-
----
-
-## Links
-
-- **GitHub:** https://github.com/zakmijo2-dotcom/Hermmers-agent
-- **Documentation:** [docs/](docs/)
-- **Issues:** https://github.com/zakmijo2-dotcom/Hermmers-agent/issues
-
----
-
-**Hemmers - Make AI agents better, not build another one.**
+MIT License. See [LICENSE](LICENSE) for details.

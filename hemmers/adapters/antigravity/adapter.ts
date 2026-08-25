@@ -2,7 +2,7 @@
  * Antigravity Adapter (stub)
  */
 
-import { BaseAdapter } from '../adapter-api';
+import { BaseAdapter } from '../adapter-api.js';
 import {
   AgentDetection,
   AgentCapabilities,
@@ -11,7 +11,7 @@ import {
   Tool,
   HemmersConfig,
   HealthStatus
-} from '../../core/types';
+} from '../../core/types/index.js';
 
 export class AntigravityAdapter extends BaseAdapter {
   readonly id = 'antigravity';

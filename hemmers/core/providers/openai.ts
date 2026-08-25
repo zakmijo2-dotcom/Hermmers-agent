@@ -1,5 +1,6 @@
 /**
  * OpenAI Provider
+ * Implementation for OpenAI GPT models with canonical message handling
  */
 
 import {
@@ -8,51 +9,57 @@ import {
   ModelConfig,
   GenerateRequest,
   GenerateResponse,
-  StreamChunk
-} from './base';
+  StreamChunk,
+  Message,
+  ToolCall,
+  executeWithRetry
+} from './base.js';
 
 export class OpenAIProvider extends ModelProvider {
   readonly id = 'openai';
   readonly name = 'OpenAI';
 
-  private readonly apiUrl = 'https://api.openai.com/v1/chat/completions';
+  private readonly defaultApiUrl = 'https://api.openai.com/v1/chat/completions';
 
   getCapabilities(model: string): ModelCapabilities {
-    if (model.includes('gpt-4')) {
-      return {
-        streaming: true,
-        toolCalling: true,
-        vision: model.includes('vision'),
-        reasoning: model.includes('o1'),
-        contextWindow: 128000,
-        maxOutputTokens: 4096,
-        supportedFormats: ['text', 'json']
-      };
-    }
-
-    return {
+    const baseCapabilities: ModelCapabilities = {
       streaming: true,
       toolCalling: true,
-      vision: false,
+      vision: true,
       reasoning: false,
-      contextWindow: 16000,
+      contextWindow: 128000,
       maxOutputTokens: 4096,
       supportedFormats: ['text', 'json']
     };
+
+    if (model.includes('gpt-4o') || model.includes('o1') || model.includes('o3')) {
+      return {
+        ...baseCapabilities,
+        maxOutputTokens: 16384,
+        reasoning: model.startsWith('o1') || model.startsWith('o3')
+      };
+    }
+
+    return baseCapabilities;
   }
 
   async generate(request: GenerateRequest, config: ModelConfig): Promise<GenerateResponse> {
     const apiKey = config.apiKey || process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error('OpenAI API key not found');
+    if (!apiKey) {
+      throw new Error('OpenAI API key not found. Set OPENAI_API_KEY environment variable.');
+    }
 
-    const body: any = {
+    const messages = this.formatMessages(request);
+    const apiUrl = config.baseUrl || this.defaultApiUrl;
+
+    const body: Record<string, unknown> = {
       model: config.model,
-      messages: request.messages,
-      temperature: request.temperature ?? config.temperature ?? 1.0,
-      max_tokens: request.maxTokens || config.maxTokens
+      messages,
+      temperature: config.temperature ?? request.temperature ?? 0.7,
+      max_tokens: config.maxTokens || request.maxTokens || 4096
     };
 
-    if (request.tools) {
+    if (request.tools && request.tools.length > 0) {
       body.tools = request.tools.map(t => ({
         type: 'function',
         function: {
@@ -63,96 +70,201 @@ export class OpenAIProvider extends ModelProvider {
       }));
     }
 
-    const response = await fetch(this.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+    return executeWithRetry(
+      async () => {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`
+          },
+          body: JSON.stringify(body),
+          signal: config.signal || request.signal
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
+        }
+
+        const data = (await response.json()) as Record<string, unknown>;
+        return this.formatResponse(data);
       },
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const choice = data.choices[0];
-
-    return {
-      content: choice.message.content || '',
-      toolCalls: choice.message.tool_calls?.map((tc: any) => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: tc.function.arguments
-      })),
-      finishReason: choice.finish_reason === 'tool_calls' ? 'tool_calls' : 'stop',
-      usage: {
-        promptTokens: data.usage.prompt_tokens,
-        completionTokens: data.usage.completion_tokens,
-        totalTokens: data.usage.total_tokens
-      }
-    };
+      { signal: config.signal || request.signal }
+    );
   }
 
-  async *generateStream(request: GenerateRequest, config: ModelConfig): AsyncGenerator<StreamChunk> {
+  async *generateStream(
+    request: GenerateRequest,
+    config: ModelConfig
+  ): AsyncGenerator<StreamChunk, void, unknown> {
     const apiKey = config.apiKey || process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error('OpenAI API key not found');
+    if (!apiKey) {
+      throw new Error('OpenAI API key not found');
+    }
 
-    const body: any = {
+    const messages = this.formatMessages(request);
+    const apiUrl = config.baseUrl || this.defaultApiUrl;
+
+    const body: Record<string, unknown> = {
       model: config.model,
-      messages: request.messages,
-      temperature: request.temperature ?? config.temperature ?? 1.0,
+      messages,
+      temperature: config.temperature ?? request.temperature ?? 0.7,
+      max_tokens: config.maxTokens || request.maxTokens || 4096,
       stream: true
     };
 
-    const response = await fetch(this.apiUrl, {
+    if (request.tools && request.tools.length > 0) {
+      body.tools = request.tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }
+      }));
+    }
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        Authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: config.signal || request.signal
     });
 
-    if (!response.ok) throw new Error(`OpenAI API error: ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
+    }
 
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No response body');
+    if (!response.body) {
+      throw new Error('No response body from OpenAI API stream');
+    }
 
+    const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6);
-        if (data === '[DONE]') {
-          yield { delta: '', done: true };
-          return;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            const dataStr = trimmed.slice(6).trim();
+            if (dataStr === '[DONE]') {
+              yield { delta: '', done: true };
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(dataStr) as {
+                choices?: Array<{ delta?: { content?: string } }>;
+              };
+              const contentDelta = parsed.choices?.[0]?.delta?.content;
+              if (contentDelta) {
+                yield { delta: contentDelta, done: false };
+              }
+            } catch {
+              // ignore partial chunk json errors
+            }
+          }
         }
-
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices[0]?.delta?.content || '';
-          yield { delta, done: false };
-        } catch {}
       }
+    } finally {
+      reader.releaseLock();
     }
   }
 
   async isAvailable(): Promise<boolean> {
-    return !!(process.env.OPENAI_API_KEY);
+    return !!process.env.OPENAI_API_KEY;
   }
 
   async listModels(): Promise<string[]> {
-    return ['gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'];
+    return ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'o1', 'o3-mini'];
+  }
+
+  private formatMessages(request: GenerateRequest): Array<Record<string, unknown>> {
+    const formatted: Array<Record<string, unknown>> = [];
+
+    // System prompt
+    if (request.system) {
+      formatted.push({ role: 'system', content: request.system });
+    }
+
+    for (const m of request.messages) {
+      if (m.role === 'system') {
+        formatted.push({ role: 'system', content: m.content });
+      } else if (m.role === 'tool') {
+        formatted.push({
+          role: 'tool',
+          tool_call_id: m.toolCallId || 'unknown',
+          content: m.content
+        });
+      } else if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+        formatted.push({
+          role: 'assistant',
+          content: m.content || null,
+          tool_calls: m.toolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.name,
+              arguments: tc.arguments
+            }
+          }))
+        });
+      } else {
+        formatted.push({
+          role: m.role,
+          content: m.content
+        });
+      }
+    }
+
+    return formatted;
+  }
+
+  private formatResponse(data: Record<string, unknown>): GenerateResponse {
+    const choices = (data.choices as Array<Record<string, unknown>>) || [];
+    const firstChoice = choices[0] || {};
+    const message = (firstChoice.message as Record<string, unknown>) || {};
+    const content = (message.content as string) || '';
+
+    let toolCalls: ToolCall[] | undefined;
+    if (Array.isArray(message.tool_calls)) {
+      toolCalls = (message.tool_calls as Array<Record<string, unknown>>).map(tc => {
+        const fn = (tc.function as Record<string, string>) || {};
+        return {
+          id: (tc.id as string) || '',
+          name: fn.name || '',
+          arguments: fn.arguments || '{}'
+        };
+      });
+    }
+
+    const usage = (data.usage as Record<string, number>) || {};
+    const promptTokens = usage.prompt_tokens || 0;
+    const completionTokens = usage.completion_tokens || 0;
+
+    return {
+      content,
+      toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+      finishReason: (firstChoice.finish_reason as GenerateResponse['finishReason']) || 'stop',
+      usage: {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens
+      }
+    };
   }
 }

@@ -11,8 +11,8 @@ import {
   AgentResponse,
   AgentToolDefinition,
   AgentMessage
-} from '../../protocol/agent';
-import { AgentRuntime } from '../runtime/agent';
+} from '../../protocol/agent.js';
+import { AgentRuntime } from '../runtime/agent.js';
 import { randomUUID } from 'crypto';
 
 export class HemmersAgent implements IAgent {

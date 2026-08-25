@@ -3,7 +3,7 @@
  * Determines what an agent can do natively
  */
 
-import { AgentCapabilities } from '../core/types';
+import { AgentCapabilities } from '../core/types/index.js';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
